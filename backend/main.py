@@ -1,11 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
-from psycopg2.extras import RealDictCursor
-from database import get_db_connection
+from supabase_client import supabase_get
 
 load_dotenv()
 
@@ -90,6 +89,78 @@ class PlaceResponse(BaseModel):
     reviewSummary: Optional[ReviewSummary] = None
 
 
+DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+
+def _row_to_place(row: dict, hours_map: dict, review_map: dict) -> PlaceResponse | None:
+    if row.get('latitude') is None or row.get('longitude') is None:
+        return None
+
+    workspace = None
+    if row.get('has_wifi') is not None or row.get('coffee_price_gbp') is not None:
+        workspace = WorkspaceDetails(
+            coffeePriceGbp=row.get('coffee_price_gbp'),
+            minSpendGbp=row.get('min_spend_gbp'),
+            hasFreeOption=row.get('has_free_option'),
+            typicalStayMins=row.get('typical_stay_mins'),
+            maxStayMins=row.get('max_stay_mins'),
+            stayNotes=row.get('stay_notes'),
+            hasWifi=row.get('has_wifi'),
+            wifiSpeedMbps=row.get('wifi_speed_mbps'),
+            wifiReliable=row.get('wifi_reliable'),
+            hasPlugs=row.get('has_plugs'),
+            plugQuantity=row.get('plug_quantity'),
+            seatingSize=row.get('seating_size'),
+            noiseLevel=row.get('noise_level'),
+            hasOutdoorSeating=row.get('has_outdoor_seating'),
+            hasStandingDesks=row.get('has_standing_desks'),
+            hasMeetingRooms=row.get('has_meeting_rooms'),
+            busynessNotes=row.get('busyness_notes'),
+            bestTimes=row.get('best_times'),
+            peakTimes=row.get('peak_times'),
+            hasToilets=row.get('has_toilets'),
+            hasFood=row.get('has_food'),
+            foodNotes=row.get('food_notes'),
+            laptopFriendlyScore=row.get('laptop_friendly_score'),
+            notes=row.get('workspace_notes'),
+        )
+
+    social = None
+    if any(row.get(k) for k in ['website_url', 'instagram_url', 'x_url', 'facebook_url', 'tiktok_url']):
+        social = SocialLinks(
+            website=row.get('website_url'),
+            instagram=row.get('instagram_url'),
+            x=row.get('x_url'),
+            facebook=row.get('facebook_url'),
+            tiktok=row.get('tiktok_url'),
+        )
+
+    review = review_map.get(row['id'])
+
+    opening_hours = None
+    if row['id'] in hours_map:
+        opening_hours = hours_map[row['id']]
+
+    return PlaceResponse(
+        id=row['id'],
+        name=row['name'],
+        description=row.get('description'),
+        category=row.get('category'),
+        categoryIcon=row.get('category_icon'),
+        latitude=row['latitude'],
+        longitude=row['longitude'],
+        address=row.get('address'),
+        area=row.get('area'),
+        postcode=row.get('postcode'),
+        googleMapsUrl=row.get('google_maps_url'),
+        isVerified=row.get('is_verified', False),
+        workspace=workspace,
+        openingHours=opening_hours,
+        socialLinks=social,
+        reviewSummary=review,
+    )
+
+
 # --- Endpoints ---
 
 @app.get("/")
@@ -102,172 +173,55 @@ def health():
 
 @app.get("/places", response_model=List[PlaceResponse])
 def get_places():
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("""
-            SELECT
-                p.id, p.name, p.description, p.google_maps_url, p.is_verified,
-                pc.category, pc.icon as category_icon,
-                ST_Y(pl.location::geometry) as latitude,
-                ST_X(pl.location::geometry) as longitude,
-                pl.address, pl.area, pl.postcode,
-                -- Workspace details
-                wd.coffee_price_gbp, wd.min_spend_gbp, wd.has_free_option,
-                wd.typical_stay_mins, wd.max_stay_mins, wd.stay_notes,
-                wd.has_wifi, wd.wifi_speed_mbps, wd.wifi_reliable,
-                wd.has_plugs, wd.plug_quantity,
-                wd.seating_size, wd.noise_level,
-                wd.has_outdoor_seating, wd.has_standing_desks, wd.has_meeting_rooms,
-                wd.busyness_notes, wd.best_times, wd.peak_times,
-                wd.has_toilets, wd.has_food, wd.food_notes,
-                wd.laptop_friendly_score, wd.notes as workspace_notes,
-                -- Social links
-                pwl.website_url, pwl.instagram_url, pwl.x_url, pwl.facebook_url, pwl.tiktok_url,
-                -- Review summary
-                COALESCE(AVG(pr.score), 0) as avg_score,
-                COUNT(pr.id) as review_count
-            FROM places p
-            LEFT JOIN place_categories pc ON p.category_id = pc.id
-            LEFT JOIN place_locations pl ON pl.place_id = p.id AND pl.is_primary = true
-            LEFT JOIN workspace_details wd ON wd.place_id = p.id
-            LEFT JOIN place_web_links pwl ON pwl.place_id = p.id
-            LEFT JOIN place_reviews pr ON pr.place_id = p.id
-            WHERE p.is_active = true
-            GROUP BY p.id, p.name, p.description, p.google_maps_url, p.is_verified,
-                     pc.category, pc.icon,
-                     pl.location, pl.address, pl.area, pl.postcode,
-                     wd.coffee_price_gbp, wd.min_spend_gbp, wd.has_free_option,
-                     wd.typical_stay_mins, wd.max_stay_mins, wd.stay_notes,
-                     wd.has_wifi, wd.wifi_speed_mbps, wd.wifi_reliable,
-                     wd.has_plugs, wd.plug_quantity,
-                     wd.seating_size, wd.noise_level,
-                     wd.has_outdoor_seating, wd.has_standing_desks, wd.has_meeting_rooms,
-                     wd.busyness_notes, wd.best_times, wd.peak_times,
-                     wd.has_toilets, wd.has_food, wd.food_notes,
-                     wd.laptop_friendly_score, wd.notes,
-                     pwl.website_url, pwl.instagram_url, pwl.x_url, pwl.facebook_url, pwl.tiktok_url
-            ORDER BY p.name
-        """)
-        rows = cur.fetchall()
+    # Fetch from Supabase REST API via the places_full view
+    rows = supabase_get("places_full", {"select": "*", "order": "name"})
 
-        places = []
-        for row in rows:
-            if row['latitude'] is None or row['longitude'] is None:
-                continue
+    # Fetch opening hours
+    all_place_ids = [r['id'] for r in rows if r.get('id')]
+    hours_map: dict = {}
+    if all_place_ids:
+        hours_rows = supabase_get("place_opening_hours", {
+            "select": "place_id,day_of_week,open_time,close_time,is_closed",
+            "order": "place_id,day_of_week",
+        })
+        for hr in hours_rows:
+            pid = hr['place_id']
+            if pid not in hours_map:
+                hours_map[pid] = []
+            if hr.get('is_closed'):
+                hours_map[pid].append(OpeningHour(day=DAYS[hr['day_of_week']], start='00:00', end='00:00'))
+            else:
+                hours_map[pid].append(OpeningHour(
+                    day=DAYS[hr['day_of_week']],
+                    start=str(hr.get('open_time', ''))[:5],
+                    end=str(hr.get('close_time', ''))[:5],
+                ))
 
-            workspace = None
-            if row.get('has_wifi') is not None or row.get('coffee_price_gbp') is not None:
-                workspace = WorkspaceDetails(
-                    coffeePriceGbp=row.get('coffee_price_gbp'),
-                    minSpendGbp=row.get('min_spend_gbp'),
-                    hasFreeOption=row.get('has_free_option'),
-                    typicalStayMins=row.get('typical_stay_mins'),
-                    maxStayMins=row.get('max_stay_mins'),
-                    stayNotes=row.get('stay_notes'),
-                    hasWifi=row.get('has_wifi'),
-                    wifiSpeedMbps=row.get('wifi_speed_mbps'),
-                    wifiReliable=row.get('wifi_reliable'),
-                    hasPlugs=row.get('has_plugs'),
-                    plugQuantity=row.get('plug_quantity'),
-                    seatingSize=row.get('seating_size'),
-                    noiseLevel=row.get('noise_level'),
-                    hasOutdoorSeating=row.get('has_outdoor_seating'),
-                    hasStandingDesks=row.get('has_standing_desks'),
-                    hasMeetingRooms=row.get('has_meeting_rooms'),
-                    busynessNotes=row.get('busyness_notes'),
-                    bestTimes=row.get('best_times'),
-                    peakTimes=row.get('peak_times'),
-                    hasToilets=row.get('has_toilets'),
-                    hasFood=row.get('has_food'),
-                    foodNotes=row.get('food_notes'),
-                    laptopFriendlyScore=row.get('laptop_friendly_score'),
-                    notes=row.get('workspace_notes'),
-                )
+    # Fetch review summaries
+    review_map: dict = {}
+    reviews = supabase_get("place_reviews", {"select": "place_id,score"})
+    from collections import defaultdict
+    scores: dict = defaultdict(list)
+    for r in reviews:
+        scores[r['place_id']].append(r['score'])
+    for pid, score_list in scores.items():
+        review_map[pid] = ReviewSummary(
+            averageScore=round(sum(score_list) / len(score_list), 1),
+            reviewCount=len(score_list),
+        )
 
-            social = None
-            if any(row.get(k) for k in ['website_url', 'instagram_url', 'x_url', 'facebook_url', 'tiktok_url']):
-                social = SocialLinks(
-                    website=row.get('website_url'),
-                    instagram=row.get('instagram_url'),
-                    x=row.get('x_url'),
-                    facebook=row.get('facebook_url'),
-                    tiktok=row.get('tiktok_url'),
-                )
+    places = []
+    for row in rows:
+        place = _row_to_place(row, hours_map, review_map)
+        if place:
+            places.append(place)
 
-            review_summary = None
-            if row['review_count'] > 0:
-                review_summary = ReviewSummary(
-                    averageScore=round(float(row['avg_score']), 1),
-                    reviewCount=row['review_count'],
-                )
-
-            places.append(PlaceResponse(
-                id=row['id'],
-                name=row['name'],
-                description=row.get('description'),
-                category=row.get('category'),
-                categoryIcon=row.get('category_icon'),
-                latitude=row['latitude'],
-                longitude=row['longitude'],
-                address=row.get('address'),
-                area=row.get('area'),
-                postcode=row.get('postcode'),
-                googleMapsUrl=row.get('google_maps_url'),
-                isVerified=row.get('is_verified', False),
-                workspace=workspace,
-                openingHours=None,  # Fetched separately below
-                socialLinks=social,
-                reviewSummary=review_summary,
-            ))
-
-        # Fetch opening hours for all places
-        if places:
-            place_ids = [p.id for p in places]
-            cur.execute("""
-                SELECT place_id, day_of_week, open_time, close_time, is_closed
-                FROM place_opening_hours
-                WHERE place_id = ANY(%s)
-                ORDER BY place_id, day_of_week
-            """, (place_ids,))
-            hours_rows = cur.fetchall()
-
-            days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
-            hours_map: dict = {}
-            for hr in hours_rows:
-                pid = hr['place_id']
-                if pid not in hours_map:
-                    hours_map[pid] = []
-                if hr['is_closed']:
-                    hours_map[pid].append(OpeningHour(
-                        day=days[hr['day_of_week']],
-                        start='00:00', end='00:00'
-                    ))
-                else:
-                    hours_map[pid].append(OpeningHour(
-                        day=days[hr['day_of_week']],
-                        start=str(hr['open_time'])[:5],
-                        end=str(hr['close_time'])[:5],
-                    ))
-
-            for place in places:
-                if place.id in hours_map:
-                    place.openingHours = hours_map[place.id]
-
-        return places
-    finally:
-        conn.close()
+    return places
 
 
 @app.get("/categories")
 def get_categories():
-    conn = get_db_connection()
-    try:
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT id, category, description, icon FROM place_categories ORDER BY id")
-        return cur.fetchall()
-    finally:
-        conn.close()
+    return supabase_get("place_categories", {"select": "id,category,description,icon", "order": "id"})
 
 
 if __name__ == "__main__":
