@@ -1,0 +1,131 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-heading: var(--font-plus-jakarta-sans), sans-serif;
+  --font-body: var(--font-inter), sans-serif;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: #FFF8F0;
+  color: #1F2937;
+}
+
+/* Leaflet overrides */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  font-family: var(--font-body);
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  padding: 0;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+  border: none;
+  overflow: hidden;
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  min-width: 280px;
+  max-width: 340px;
+}
+
+.leaflet-popup-close-button {
+  color: #6B7280 !important;
+  font-size: 20px !important;
+  padding: 8px 10px !important;
+  z-index: 10;
+}
+
+.leaflet-popup-tip {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* Marker cluster overrides */
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+  background-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+  background-color: #F59E0B !important;
+  color: white !important;
+  font-family: var(--font-heading);
+  font-weight: 600;
+}
+
+/* Custom marker */
+.custom-marker {
+  background: none;
+  border: none;
+}
+
+.marker-pin {
+  width: 36px;
+  height: 36px;
+  border-radius: 50% 50% 50% 0;
+  background: #F59E0B;
+  position: absolute;
+  transform: rotate(-45deg);
+  left: 50%;
+  top: 50%;
+  margin: -18px 0 0 -18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
+  cursor: pointer;
+}
+
+.marker-pin:hover {
+  transform: rotate(-45deg) scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.marker-pin span {
+  transform: rotate(45deg);
+  font-size: 14px;
+}
+
+/* Feature badges */
+.feature-badge {
+  @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium;
+}
+
+.feature-badge-wifi {
+  @apply bg-emerald-50 text-emerald-700;
+}
+
+.feature-badge-plugs {
+  @apply bg-blue-50 text-blue-700;
+}
+
+.feature-badge-quiet {
+  @apply bg-purple-50 text-purple-700;
+}
+
+.feature-badge-food {
+  @apply bg-orange-50 text-orange-700;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #D1D5DB;
+  border-radius: 3px;
+}
