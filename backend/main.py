@@ -1,10 +1,14 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Optional
 from pydantic import BaseModel
 import os
+import logging
 from dotenv import load_dotenv
 from supabase_client import supabase_get
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -173,55 +177,69 @@ def health():
 
 @app.get("/places", response_model=List[PlaceResponse])
 def get_places():
-    # Fetch from Supabase REST API via the places_full view
-    rows = supabase_get("places_full", {"select": "*", "order": "name"})
+    try:
+        logger.info("Fetching places from Supabase...")
+        rows = supabase_get("places_full", {"select": "*", "order": "name"})
+        logger.info(f"Got {len(rows)} rows from places_full")
 
-    # Fetch opening hours
-    all_place_ids = [r['id'] for r in rows if r.get('id')]
-    hours_map: dict = {}
-    if all_place_ids:
-        hours_rows = supabase_get("place_opening_hours", {
-            "select": "place_id,day_of_week,open_time,close_time,is_closed",
-            "order": "place_id,day_of_week",
-        })
-        for hr in hours_rows:
-            pid = hr['place_id']
-            if pid not in hours_map:
-                hours_map[pid] = []
-            if hr.get('is_closed'):
-                hours_map[pid].append(OpeningHour(day=DAYS[hr['day_of_week']], start='00:00', end='00:00'))
-            else:
-                hours_map[pid].append(OpeningHour(
-                    day=DAYS[hr['day_of_week']],
-                    start=str(hr.get('open_time', ''))[:5],
-                    end=str(hr.get('close_time', ''))[:5],
-                ))
+        # Fetch opening hours
+        hours_map: dict = {}
+        try:
+            hours_rows = supabase_get("place_opening_hours", {
+                "select": "place_id,day_of_week,open_time,close_time,is_closed",
+                "order": "place_id,day_of_week",
+            })
+            for hr in hours_rows:
+                pid = hr['place_id']
+                if pid not in hours_map:
+                    hours_map[pid] = []
+                if hr.get('is_closed'):
+                    hours_map[pid].append(OpeningHour(day=DAYS[hr['day_of_week']], start='00:00', end='00:00'))
+                else:
+                    hours_map[pid].append(OpeningHour(
+                        day=DAYS[hr['day_of_week']],
+                        start=str(hr.get('open_time', ''))[:5],
+                        end=str(hr.get('close_time', ''))[:5],
+                    ))
+        except Exception as e:
+            logger.warning(f"Failed to fetch opening hours: {e}")
 
-    # Fetch review summaries
-    review_map: dict = {}
-    reviews = supabase_get("place_reviews", {"select": "place_id,score"})
-    from collections import defaultdict
-    scores: dict = defaultdict(list)
-    for r in reviews:
-        scores[r['place_id']].append(r['score'])
-    for pid, score_list in scores.items():
-        review_map[pid] = ReviewSummary(
-            averageScore=round(sum(score_list) / len(score_list), 1),
-            reviewCount=len(score_list),
-        )
+        # Fetch review summaries
+        review_map: dict = {}
+        try:
+            reviews = supabase_get("place_reviews", {"select": "place_id,score"})
+            from collections import defaultdict
+            scores: dict = defaultdict(list)
+            for r in reviews:
+                scores[r['place_id']].append(r['score'])
+            for pid, score_list in scores.items():
+                review_map[pid] = ReviewSummary(
+                    averageScore=round(sum(score_list) / len(score_list), 1),
+                    reviewCount=len(score_list),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to fetch reviews: {e}")
 
-    places = []
-    for row in rows:
-        place = _row_to_place(row, hours_map, review_map)
-        if place:
-            places.append(place)
+        places = []
+        for row in rows:
+            place = _row_to_place(row, hours_map, review_map)
+            if place:
+                places.append(place)
 
-    return places
+        logger.info(f"Returning {len(places)} places")
+        return places
+    except Exception as e:
+        logger.error(f"Error in get_places: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/categories")
 def get_categories():
-    return supabase_get("place_categories", {"select": "id,category,description,icon", "order": "id"})
+    try:
+        return supabase_get("place_categories", {"select": "id,category,description,icon", "order": "id"})
+    except Exception as e:
+        logger.error(f"Error in get_categories: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
