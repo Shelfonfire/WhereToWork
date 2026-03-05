@@ -29,6 +29,20 @@ const config: Config = {
         heading: ['var(--font-plus-jakarta-sans)', 'sans-serif'],
         body: ['var(--font-inter)', 'sans-serif'],
       },
+      boxShadow: {
+        'warm': '0 2px 12px rgba(180, 120, 60, 0.08)',
+        'warm-md': '0 4px 20px rgba(180, 120, 60, 0.12)',
+        'warm-lg': '0 8px 30px rgba(180, 120, 60, 0.15)',
+      },
+      keyframes: {
+        'slide-in': {
+          from: { opacity: '0', transform: 'translateX(20px)' },
+          to: { opacity: '1', transform: 'translateX(0)' },
+        },
+      },
+      animation: {
+        'slide-in': 'slide-in 0.25s ease-out',
+      },
     },
   },
   plugins: [],
