@@ -1,25 +1,22 @@
 # WhereToWork - Next Steps
 
-## Status: Deployed — frontend live, backend debugging
+## Status: Deployed — full stack live
 
-## Task 1: Deploy
+## Task 1: Deploy — DONE
 
-### Vercel (frontend) — DONE
+### Vercel (frontend)
 - Live at: https://wheretowork.vercel.app
 - Root: `frontend/`, Framework: Next.js
-- TODO: set `NEXT_PUBLIC_API_URL` to Railway URL once backend works
+- TODO: set `NEXT_PUBLIC_API_URL` = `https://wheretowork-production.up.railway.app` on Vercel
 
-### Railway (backend) — 502, needs fix
-- URL: https://wheretowork-production.up.railway.app
-- Health endpoint was working, now 502 (app not starting)
-- Logging added to `main.py` + `supabase_client.py`
-- Removed unused `psycopg2`/`geopy` deps
-- **Check**: Root directory must be `backend/` in Railway Settings
-- **Check**: Env vars set: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `PORT=8000`
+### Railway (backend)
+- Live at: https://wheretowork-production.up.railway.app
+- Root: `backend/`, do NOT set `PORT` env var (Railway assigns its own)
+- Env vars: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `FRONTEND_URL`
 
-### After backend fix
-- Set `NEXT_PUBLIC_API_URL` on Vercel = Railway URL
-- Set `FRONTEND_URL` on Railway = https://wheretowork.vercel.app
+### Remaining connect steps
+- Set `NEXT_PUBLIC_API_URL` on Vercel = `https://wheretowork-production.up.railway.app`
+- Set `FRONTEND_URL` on Railway = `https://wheretowork.vercel.app`
 - Test: visit Vercel URL, verify map loads with data
 
 ## Task 2: Rotate Supabase password
